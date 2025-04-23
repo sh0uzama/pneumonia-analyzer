@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pneumonia Classification</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .container {
+            background-color: #f9f9f9;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .upload-area {
+            border: 2px dashed #ccc;
+            border-radius: 10px;
+            padding: 20px;
+            text-align: center;
+            margin: 20px 0;
+            cursor: pointer;
+        }
+        .upload-area:hover {
+            border-color: #888;
+        }
+        .preview {
+            max-width: 100%;
+            max-height: 300px;
+            margin: 10px auto;
+            display: block;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 5px;
+            text-align: center;
+            font-size: 18px;
+        }
+        .success {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .error {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        .hidden {
+            display: none;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 10px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255,255,255,.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 1s ease-in-out infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .model-status {
+            text-align: center;
+            padding: 10px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+        }
+        .model-loaded {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .model-error {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Pneumonia Classification</h1>
+        
+        <div class="model-status {% if model_loaded %}model-loaded{% else %}model-error{% endif %}">
+            {% if model_loaded %}
+                ✅ Model loaded successfully
+            {% else %}
+                ❌ Model not loaded. Predictions will not work.
+            {% endif %}
+        </div>
+        
+        <div class="upload-area" id="upload-area">
+            <p>Click to upload an X-ray image or drag and drop here</p>
+            <input type="file" id="file-input" accept="image/*" style="display: none;">
+        </div>
+        
+        <div id="preview-container" class="hidden">
+            <img id="preview" class="preview">
+            <div style="text-align: center;">
+                <button id="predict-btn" {% if not model_loaded %}disabled{% endif %}>
+                    Analyze Image
+                </button>
+                <button id="reset-btn">Reset</button>
+            </div>
+        </div>
+        
+        <div id="result" class="result hidden"></div>
+    </div>
+
+    <script>
+        const uploadArea = document.getElementById('upload-area');
+        const fileInput = document.getElementById('file-input');
+        const previewContainer = document.getElementById('preview-container');
+        const preview = document.getElementById('preview');
+        const predictBtn = document.getElementById('predict-btn');
+        const resetBtn = document.getElementById('reset-btn');
+        const resultDiv = document.getElementById('result');
+        
+        // Handle click on upload area
+        uploadArea.addEventListener('click', () => {
+            fileInput.click();
+        });
+        
+        // Handle drag and drop
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.style.borderColor = '#45a049';
+        });
+        
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.style.borderColor = '#ccc';
+        });
+        
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.style.borderColor = '#ccc';
+            
+            if (e.dataTransfer.files.length) {
+                fileInput.files = e.dataTransfer.files;
+                handleFileSelect();
+            }
+        });
+        
+        // Handle file selection
+        fileInput.addEventListener('change', handleFileSelect);
+        
+        function handleFileSelect() {
+            const file = fileInput.files[0];
+            
+            if (file && file.type.startsWith('image/')) {
+                const reader = new FileReader();
+                
+                reader.onload = (e) => {
+                    preview.src = e.target.result;
+                    uploadArea.classList.add('hidden');
+                    previewContainer.classList.remove('hidden');
+                    resultDiv.classList.add('hidden');
+                };
+                
+                reader.readAsDataURL(file);
+            }
+        }
+        
+        // Handle prediction
+        predictBtn.addEventListener('click', async () => {
+            if (!fileInput.files[0]) return;
+            
+            // Show loading state
+            predictBtn.disabled = true;
+            predictBtn.innerHTML = '<span class="loading"></span> Analyzing...';
+            resultDiv.classList.add('hidden');
+            
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            
+            try {
+                const response = await fetch('/predict', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    resultDiv.innerHTML = `
+                        <strong>${result.label}</strong><br>
+                        Confidence: ${result.probability}
+                    `;
+                    resultDiv.className = 'result success';
+                } else {
+                    resultDiv.innerHTML = `Error: ${result.error}`;
+                    resultDiv.className = 'result error';
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `Error: ${error.message}`;
+                resultDiv.className = 'result error';
+            } finally {
+                predictBtn.disabled = false;
+                predictBtn.innerText = 'Analyze Image';
+                resultDiv.classList.remove('hidden');
+            }
+        });
+        
+        // Handle reset
+        resetBtn.addEventListener('click', () => {
+            fileInput.value = '';
+            preview.src = '';
+            previewContainer.classList.add('hidden');
+            uploadArea.classList.remove('hidden');
+            resultDiv.classList.add('hidden');
+        });
+    </script>
+</body>
+</html>
